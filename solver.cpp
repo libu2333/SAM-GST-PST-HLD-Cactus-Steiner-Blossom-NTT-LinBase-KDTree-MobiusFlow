@@ -40,7 +40,6 @@ struct SAM {
 } sam;
 
 struct GeneralizedSuffixTree {
-    SuffixAutomaton sam;
     vector<int> pos[11]; // position list for each string
 
     void addString(const string& s, int idx) {
@@ -513,4 +512,3 @@ int main() {
 	cout<<flow.minCost(s,t);
 	return 0;
 }
-
