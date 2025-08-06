@@ -1,41 +1,60 @@
 #include<bits/stdc++.h>
 using namespace std;
 const int MAXV=100005,MAXE=200005,INF=0x3f3f3f3f;
-// suffix automaton
 struct SAM {
-	static const int N=200005;
-	int nxt[N][26],link[N],len[N],cnt,las;
-	void init() {
-		cnt=1;
-		las=1;
-		memset(nxt,0,sizeof(nxt));
-		link[1]=0;
-		len[1]=0;
-	} void extend(int c) {
-		int cur=++cnt,p=las;
-		len[cur]=len[p]+1;
-		while(p&&!nxt[p][c])nxt[p][c]=cur,p=link[p];
-		if(!p)link[cur]=1;
-		else {
-			int q=nxt[p][c];
-			if(len[q]==len[p]+1)link[cur]=q;
-			else {
-				int clone=++cnt;
-				len[clone]=len[p]+1;
-				memcpy(nxt[clone],nxt[q],sizeof(nxt[q]));
-				link[clone]=link[q];
-				while(p&&nxt[p][c]==q)nxt[p][c]=clone,p=link[p];
-				link[q]=link[cur]=clone;
-			}
-		}
-		las=cur;
-	}
+    static const int N = MAXV * 2;
+    int len[N], link[N], ch[N][26], last, tot;
+    vector<int> tree[N];
+
+    SuffixAutomaton() { init(); }
+    void init() {
+        memset(ch[0], 0, sizeof ch[0]);
+        tot = last = 1;
+        len[1] = 0; link[1] = 0;
+    }
+
+    void extend(char c) {
+        int x = c - 'a', cur = ++tot, p = last;
+        len[cur] = len[p] + 1;
+        while (p && !ch[p][x]) ch[p][x] = cur, p = link[p];
+        if (!p) link[cur] = 1;
+        else {
+            int q = ch[p][x];
+            if (len[q] == len[p] + 1) link[cur] = q;
+            else {
+                int clone = ++tot;
+                len[clone] = len[p] + 1;
+                memcpy(ch[clone], ch[q], sizeof ch[q]);
+                link[clone] = link[q];
+                while (p && ch[p][x] == q) ch[p][x] = clone, p = link[p];
+                link[q] = link[cur] = clone;
+            }
+        }
+        last = cur;
+    }
+
+    void buildTree() {
+        for (int i = 2; i <= tot; ++i)
+            tree[link[i]].push_back(i);
+    }
 } sam;
-// generalized suffix tree (tree from SAM)
-vector<int>gstTree[SAM::N];
-void buildGST() {
-	for(int i=2; i<=sam.cnt; i++)gstTree[sam.link[i]].push_back(i);
-}
+
+struct GeneralizedSuffixTree {
+    SuffixAutomaton sam;
+    vector<int> pos[11]; // position list for each string
+
+    void addString(const string& s, int idx) {
+        sam.last = 1;
+        for (char c : s) {
+            sam.extend(c);
+            pos[idx].push_back(sam.last);
+        }
+    }
+
+    void finalize() {
+        sam.buildTree();
+    }
+} sft;
 // persistent segment tree
 int pst_l[MAXV*40],pst_r[MAXV*40],pst_sum[MAXV*40],pst_root[MAXV],pst_tot;
 int pst_update(int prev,int l,int r,int pos) {
@@ -60,14 +79,80 @@ int pst_merge(int x,int y) {
 }
 // cactus steiner tree placeholder
 struct CactusSteiner {
-	vector<int>adj[MAXV];
-	void addEdge(int u,int v) {
-		adj[u].push_back(v);
-		adj[v].push_back(u);
-	} vector<int>buildSteiner(vector<int>&pts) {
-		return pts;
-	}
+    vector<int> adj[MAXV];
+    int fa[MAXV], dep[MAXV], top[MAXV], sz[MAXV], son[MAXV], dfn[MAXV], clk = 0;
+    int f[MAXV];
+    vector<int> pts;
+
+    void addEdge(int u, int v) {
+        adj[u].push_back(v);
+        adj[v].push_back(u);
+    }
+
+    void dfs1(int u, int p) {
+        fa[u] = p; sz[u] = 1; son[u] = 0;
+        for (int v : adj[u]) if (v != p) {
+            dep[v] = dep[u] + 1;
+            dfs1(v, u);
+            sz[u] += sz[v];
+            if (sz[v] > sz[son[u]]) son[u] = v;
+        }
+    }
+
+    void dfs2(int u, int tp) {
+        top[u] = tp; dfn[u] = ++clk;
+        if (son[u]) dfs2(son[u], tp);
+        for (int v : adj[u]) if (v != fa[u] && v != son[u]) dfs2(v, v);
+    }
+
+    int lca(int u, int v) {
+        while (top[u] != top[v]) {
+            if (dep[top[u]] < dep[top[v]]) swap(u, v);
+            u = fa[top[u]];
+        }
+        return dep[u] < dep[v] ? u : v;
+    }
+
+    void markSteiner(vector<int>& nodes) {
+        sort(nodes.begin(), nodes.end(), [&](int a, int b) { return dfn[a] < dfn[b]; });
+        stack<int> stk; stk.push(nodes[0]);
+        vector<pair<int,int>> extraEdges;
+        for (int i = 1; i < nodes.size(); ++i) {
+            int l = lca(stk.top(), nodes[i]);
+            vector<int> tmp;
+            while (dep[stk.top()] > dep[l]) {
+                tmp.push_back(stk.top()); stk.pop();
+            }
+            if (stk.top() != l) {
+                tmp.push_back(stk.top()); stk.pop();
+                stk.push(l);
+            }
+            for (int j = tmp.size() - 1; j > 0; --j)
+                extraEdges.emplace_back(tmp[j], tmp[j - 1]);
+            if (!tmp.empty()) extraEdges.emplace_back(stk.top(), tmp.back());
+            stk.push(nodes[i]);
+        }
+        vector<int> final;
+        while (stk.size() > 1) {
+            int u = stk.top(); stk.pop();
+            extraEdges.emplace_back(stk.top(), u);
+        }
+        for (auto [u,v] : extraEdges) {
+            f[u] = 1; f[v] = 1;
+        }
+    }
+
+    vector<int> buildSteiner(vector<int>& terminals) {
+        pts = terminals;
+        dfs1(pts[0], 0);
+        dfs2(pts[0], pts[0]);
+        markSteiner(terminals);
+        vector<int> result;
+        for (int v : pts) if (f[v]) result.push_back(v);
+        return result;
+    }
 };
+
 // blossom algorithm for max weight matching
 struct Blossom {
 	int n;
@@ -215,48 +300,143 @@ struct PolyNewton {
 	}
 }polyNewton;
 // linear basis
-struct LinearBasis {
-	long long a[64];
-	void init() {
-		memset(a,0,sizeof(a));
-	} void add(long long x) {
-		for(int i=63; i>=0; i--)if(x>>i&1) {
-				if(!a[i]) {
-					a[i]=x;
-					return;
-				}
-				x^=a[i];
-			}
-	} LinearBasis merge(LinearBasis&b) {
-		LinearBasis c;
-		for(int i=0; i<64; i++)c.a[i]=a[i]^b.a[i];
-		return c;
-	}
+struct LinearBasis{
+    static const int LG = 64;
+    long long a[LG];
+    void init(){memset(a,0,sizeof(a));}
+    void add(long long x){
+        for(int i=LG-1;i>=0;i--)if(x>>i&1){
+            if(!a[i]){a[i]=x;return;}
+            x^=a[i];
+        }
+    }
+    bool canRepresent(long long x){
+        for(int i=LG-1;i>=0;i--)if(x>>i&1)x^=a[i];
+        return x==0;
+    }
+    long long maxXor(long long res=0){
+        for(int i=LG-1;i>=0;i--)res=max(res,res^a[i]);
+        return res;
+    }
+    LinearBasis merge(LinearBasis&b){
+        LinearBasis res=*this;
+        for(int i=0;i<LG;i++)if(b.a[i])res.add(b.a[i]);
+        return res;
+    }
 }basis;
 // kd-tree
-struct KDTree {
-	struct Node {
-		vector<int>pt;
-		Node*l,*r;
-	};
-	Node*build(vector<vector<int>>&pts,int l,int r,int d) {
-		if(l>r)return nullptr;
-		int m=(l+r)/2;
-		nth_element(pts.begin()+l,pts.begin()+m,pts.begin()+r+1,[&](auto&a,auto&b) {
-			return a[d]<b[d];
-		});
-		Node*o=new Node();
-		o->pt=pts[m];
-		o->l=build(pts,l,m-1,(d+1)%pts[0].size());
-		o->r=build(pts,m+1,r,(d+1)%pts[0].size());
-		return o;
-	}
+struct KDTree{
+    static const int K = 2; // dimension
+    struct Node{
+        array<int,K> pt;
+        Node *l=nullptr, *r=nullptr;
+        Node(array<int,K> _pt): pt(_pt) {}
+    };
+
+    Node* root = nullptr;
+    vector<array<int,K>> data;
+
+    Node* build(int l,int r,int d){
+        if(l > r) return nullptr;
+        int m=(l+r)>>1;
+        nth_element(data.begin()+l, data.begin()+m, data.begin()+r+1, [&](const array<int,K>&a, const array<int,K>&b){ return a[d]<b[d]; });
+        Node* node = new Node(data[m]);
+        node->l = build(l,m-1,(d+1)%K);
+        node->r = build(m+1,r,(d+1)%K);
+        return node;
+    }
+
+    void buildTree(){
+        root = build(0,data.size()-1,0);
+    }
+
+    void insert(Node*& node, array<int,K> pt, int d){
+        if(!node){ node = new Node(pt); return; }
+        if(pt[d] < node->pt[d]) insert(node->l, pt, (d+1)%K);
+        else insert(node->r, pt, (d+1)%K);
+    }
+
+    void insert(array<int,K> pt){
+        data.push_back(pt);
+        insert(root, pt, 0);
+    }
+
+    int dist2(const array<int,K>&a, const array<int,K>&b){
+        int res = 0;
+        for(int i = 0; i < K; i++) res += (a[i]-b[i])*(a[i]-b[i]);
+        return res;
+    }
+
+    void knn(Node* node, array<int,K>& target, int k, int d, priority_queue<pair<int,array<int,K>>>& pq){
+        if(!node) return;
+        int d2 = dist2(node->pt, target);
+        pq.push({d2, node->pt});
+        if((int)pq.size() > k) pq.pop();
+        int diff = target[d] - node->pt[d];
+        if(diff < 0){
+            knn(node->l, target, k, (d+1)%K, pq);
+            if((int)pq.size()<k || diff*diff < pq.top().first) knn(node->r, target, k, (d+1)%K, pq);
+        }else{
+            knn(node->r, target, k, (d+1)%K, pq);
+            if((int)pq.size()<k || diff*diff < pq.top().first) knn(node->l, target, k, (d+1)%K, pq);
+        }
+    }
+
+    vector<array<int,K>> knn(array<int,K> target, int k){
+        priority_queue<pair<int,array<int,K>>> pq;
+        knn(root, target, k, 0, pq);
+        vector<array<int,K>> res;
+        while(!pq.empty()) res.push_back(pq.top().second), pq.pop();
+        reverse(res.begin(), res.end());
+        return res;
+    }
+
+    // NOTE: KDTree deletion is complex; here we just rebuild tree for simplicity
+    void erase(array<int,K> pt){
+        data.erase(remove(data.begin(), data.end(), pt), data.end());
+        root = build(0, data.size()-1, 0);
+    }
 }kdtree;
 // mobius inversion apply (placeholder)
-void mobiusInv(vector<long long>&f) {
-	int n=f.size();
-	for(int i=1; i<n; i++)for(int j=i; j<n; j+=i)f[j]-=f[i];
+const int MAXN = 305;
+int mu[MAXN];
+void calcMobius() {
+    for (int i = 1; i < MAXN; i++) mu[i] = 1;
+    for (int i = 2; i < MAXN; i++) {
+        if (mu[i] == 1) {
+            for (int j = i; j < MAXN; j += i) mu[j] *= -i;
+            for (int j = i * i; j < MAXN; j += i * i) mu[j] = 0;
+        }
+    }
+    for (int i = 1; i < MAXN; i++) if (mu[i] == i) mu[i] = 1; else if (mu[i] == -i) mu[i] = -1; else if (mu[i] < 0) mu[i] = 1; else if (mu[i] > 0) mu[i] = -1;
 }
+
+void mobius2D(vector<vector<long long>>& f, vector<vector<long long>>& g, int n, int m) {
+    calcMobius();
+    g.assign(n+1, vector<long long>(m+1, 0));
+    for (int x = 1; x <= n; x++)
+        for (int y = 1; y <= m; y++)
+            for (int d1 = 1; d1 * d1 <= x; ++d1) if (x % d1 == 0)
+                for (int d2 = 1; d2 * d2 <= y; ++d2) if (y % d2 == 0) {
+                    int u1 = d1, u2 = d2;
+                    int v1 = x/d1, v2 = y/d2;
+                    g[x][y] += mu[v1] * mu[v2] * f[u1][u2];
+                    if (d1 * d1 != x) {
+                        u1 = x/d1; v1 = d1;
+                        g[x][y] += mu[v1] * mu[v2] * f[u1][u2];
+                    }
+                    if (d2 * d2 != y) {
+                        u2 = y/d2; v2 = d2;
+                        g[x][y] += mu[v1] * mu[v2] * f[u1][u2];
+                    }
+                    if (d1*d1!=x && d2*d2!=y) {
+                        u1 = x/d1; u2 = y/d2;
+                        v1 = d1; v2 = d2;
+                        g[x][y] += mu[v1] * mu[v2] * f[u1][u2];
+                    }
+                }
+}
+
 // min cost flow with SPFA
 struct MinCostFlow {
 	struct Edge {
@@ -333,3 +513,4 @@ int main() {
 	cout<<flow.minCost(s,t);
 	return 0;
 }
+
